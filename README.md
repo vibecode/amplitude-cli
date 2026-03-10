@@ -1,10 +1,6 @@
 # amplitude-cli (`amp`)
 
-CLI for querying Amplitude analytics data. Designed for AI agents (OpenClaw) and humans alike.
-
-## Why?
-
-Amplitude has an MCP server for AI tools, but MCP isn't great for agents that need composability — piping output, chaining commands, caching results, streaming large datasets. This CLI talks directly to Amplitude's Dashboard REST API and works anywhere.
+CLI for querying Amplitude analytics data via Amplitude's MCP server. OAuth only — single auth method, no API keys needed. Designed for AI agents (OpenClaw) and humans alike.
 
 ## Install
 
@@ -12,27 +8,21 @@ Amplitude has an MCP server for AI tools, but MCP isn't great for agents that ne
 npm install -g amplitude-cli
 ```
 
-Or use directly with npx:
+## Authentication
+
+All commands use OAuth (via Amplitude's MCP server). Two ways to authenticate:
+
+### Option 1: Environment variable (recommended for agents)
+
+Set `AMPLITUDE_ACCESS_TOKEN` — typically injected via Nango/OpenClaw:
 
 ```bash
-npx amplitude-cli events list
+export AMPLITUDE_ACCESS_TOKEN="your-oauth-token"
 ```
 
-## Configuration
+#### OpenClaw integration
 
-Set environment variables:
-
-```bash
-export AMPLITUDE_API_KEY="your-api-key"
-export AMPLITUDE_SECRET_KEY="your-secret-key"
-export AMPLITUDE_REGION="us"  # or "eu"
-```
-
-Find your API key and secret key in Amplitude under **Organization Settings → Projects → [Your Project]**.
-
-### OpenClaw Integration
-
-If you're using this with OpenClaw, configure credentials in `~/.openclaw/openclaw.json`:
+In `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -41,9 +31,7 @@ If you're using this with OpenClaw, configure credentials in `~/.openclaw/opencl
       "amplitude": {
         "enabled": true,
         "env": {
-          "AMPLITUDE_API_KEY": "your-api-key",
-          "AMPLITUDE_SECRET_KEY": "your-secret-key",
-          "AMPLITUDE_REGION": "us"
+          "AMPLITUDE_ACCESS_TOKEN": "your-nango-token"
         }
       }
     }
@@ -51,21 +39,32 @@ If you're using this with OpenClaw, configure credentials in `~/.openclaw/opencl
 }
 ```
 
+### Option 2: Interactive login (for humans)
+
+```bash
+amp auth login           # opens browser for OAuth
+amp auth login --region eu
+```
+
+Tokens are saved to `~/.amplituderc` and auto-refreshed.
+
 ## Usage
 
 ```bash
-# Verify authentication
-amp auth status
+# Auth
+amp auth status                          # check connection
+amp auth tools                           # list available MCP tools
 
-# List events
-amp events list
-amp events list --search "purchase"
+# Events
+amp events list                          # list all event types
+amp events list -s "purchase"            # search events
+amp events props "page_view"             # get properties for an event
 
-# Event segmentation
+# Segmentation
 amp query segment -e "page_view" --from 2026-01-01 --to 2026-03-01
 amp query segment -e "purchase" --from 2026-01-01 --to 2026-03-01 -m totals -g "user:platform"
 
-# Funnel analysis
+# Funnels
 amp query funnel -e signup onboarding purchase --from 2026-01-01 --to 2026-03-01
 
 # Retention
@@ -74,7 +73,18 @@ amp query retention --start-event signup --return-event _active --from 2026-01-0
 # Revenue
 amp query revenue --from 2026-01-01 --to 2026-03-01 -m arpu
 
-# User lookup
+# Charts
+amp charts search "DAU"                  # search charts
+amp charts get abc123                    # get chart definition
+amp charts query abc123                  # get chart data
+amp charts create --definition '{}' --save --name "My Chart"
+
+# Dashboards
+amp dashboards search "KPIs"
+amp dashboards get abc123
+amp dashboards create --name "Weekly KPIs" --definition '[...]'
+
+# Users
 amp users search "user@example.com"
 amp users activity 12345678
 
@@ -82,11 +92,14 @@ amp users activity 12345678
 amp cohorts list
 amp cohorts get abc123
 
-# Output as CSV
-amp query segment -e "signup" --from 2026-01-01 --to 2026-03-01 -f csv > signups.csv
+# Experiments
+amp experiments search "onboarding"
+amp experiments get abc123
+amp experiments results abc123
 
-# Pipe to jq
-amp query segment -e "purchase" --from 2026-01-01 --to 2026-03-01 -f compact | jq '.data.series'
+# Output formats
+amp query segment -e "signup" --from 2026-01-01 --to 2026-03-01 -f csv > signups.csv
+amp query segment -e "purchase" --from 2026-01-01 --to 2026-03-01 -f compact | jq '.data'
 ```
 
 ## Output Formats
@@ -94,8 +107,16 @@ amp query segment -e "purchase" --from 2026-01-01 --to 2026-03-01 -f compact | j
 All commands support `-f` / `--format`:
 
 - `json` — pretty-printed (default)
-- `compact` — single-line JSON
+- `compact` — single-line JSON (for piping)
 - `csv` — CSV output
+
+## Architecture
+
+```
+amp CLI → Amplitude MCP server (OAuth)
+```
+
+Single transport, single auth method. The CLI is a thin layer over Amplitude's MCP server, which handles all analytics queries, chart creation, dashboard management, and more.
 
 ## License
 

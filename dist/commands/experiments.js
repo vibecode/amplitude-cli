@@ -1,15 +1,15 @@
 /**
  * Experiment commands — analyze A/B tests and feature flags.
- * Requires OAuth login (amp auth login).
+ * All via MCP server (OAuth).
  */
 import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 export function registerExperimentCommands(program) {
     const experiments = program
         .command("experiments")
-        .description("Analyze experiments and feature flags (requires OAuth login)");
-    // ─── Search for experiments ─────────────────────────────────────────
+        .description("Analyze experiments and feature flags");
     experiments
         .command("search <query>")
         .description("Search for experiments and feature flags")
@@ -25,7 +25,6 @@ export function registerExperimentCommands(program) {
             handleError(err);
         }
     });
-    // ─── Get experiment details ─────────────────────────────────────────
     experiments
         .command("get <experiment-id...>")
         .description("Get detailed experiment information")
@@ -40,7 +39,6 @@ export function registerExperimentCommands(program) {
             handleError(err);
         }
     });
-    // ─── Query experiment results ───────────────────────────────────────
     experiments
         .command("results <experiment-id>")
         .description("Get experiment results with statistical significance")
@@ -55,21 +53,5 @@ export function registerExperimentCommands(program) {
             handleError(err);
         }
     });
-}
-function extractMcpText(result) {
-    const texts = result.content
-        .filter((c) => c.type === "text" && c.text)
-        .map((c) => c.text);
-    if (texts.length === 0)
-        return result;
-    if (texts.length === 1) {
-        try {
-            return JSON.parse(texts[0]);
-        }
-        catch {
-            return texts[0];
-        }
-    }
-    return texts;
 }
 //# sourceMappingURL=experiments.js.map

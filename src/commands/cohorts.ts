@@ -1,10 +1,12 @@
 /**
- * Cohort commands — list, get, download.
+ * Cohort commands — list, get, create.
+ * Uses MCP tools: search, get_cohorts, create_cohort.
  */
 
 import { Command } from "commander";
-import { AmplitudeClient } from "../client.js";
+import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output, type OutputFormat } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 
 export function registerCohortCommands(program: Command): void {
@@ -14,52 +16,65 @@ export function registerCohortCommands(program: Command): void {
 
   cohorts
     .command("list")
-    .description("List all cohorts in the project")
+    .description("List cohorts in the project")
+    .option("-s, --search <query>", "Search cohorts by name", "")
+    .option("--limit <n>", "Max results", "20")
     .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (opts) => {
       try {
-        const client = new AmplitudeClient();
-        const result = await client.get("/api/3/cohorts");
-        output(result, opts.format as OutputFormat);
+        const mcp = new AmplitudeMcpClient();
+        const query = opts.search || "*";
+        const result = await mcp.search(query, ["COHORT"], parseInt(opts.limit));
+        output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
         handleError(err);
       }
     });
 
   cohorts
-    .command("get <cohort-id>")
-    .description("Get a specific cohort definition")
+    .command("get <cohort-id...>")
+    .description("Get cohort definitions by ID")
     .option("-f, --format <format>", "Output format: json, compact, csv", "json")
-    .action(async (cohortId, opts) => {
+    .action(async (cohortIds, opts) => {
       try {
-        const client = new AmplitudeClient();
-        const result = await client.get(`/api/3/cohorts/${cohortId}`);
-        output(result, opts.format as OutputFormat);
+        const mcp = new AmplitudeMcpClient();
+        const result = await mcp.callTool("get_cohorts", {
+          cohort_ids: cohortIds,
+        });
+        output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
         handleError(err);
       }
     });
 
   cohorts
-    .command("download <cohort-id>")
-    .description("Download cohort user list")
-    .option(
-      "--props <properties>",
-      "Comma-separated user properties to include"
-    )
+    .command("create")
+    .description("Create a cohort from a JSON definition (reads from stdin or --definition)")
+    .requiredOption("--name <name>", "Cohort name")
+    .option("--description <desc>", "Cohort description")
+    .option("--definition <json>", "Cohort definition as JSON string")
     .option("-f, --format <format>", "Output format: json, compact, csv", "json")
-    .action(async (cohortId, opts) => {
+    .action(async (opts) => {
       try {
-        const client = new AmplitudeClient();
-        const params: Record<string, string> = {};
-        if (opts.props) {
-          params.props = opts.props;
+        let definition: Record<string, unknown>;
+
+        if (opts.definition) {
+          definition = JSON.parse(opts.definition);
+        } else {
+          const chunks: Buffer[] = [];
+          for await (const chunk of process.stdin) {
+            chunks.push(chunk as Buffer);
+          }
+          definition = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
         }
-        const result = await client.get(
-          `/api/5/cohorts/request/${cohortId}`,
-          params
-        );
-        output(result, opts.format as OutputFormat);
+
+        const mcp = new AmplitudeMcpClient();
+        const result = await mcp.callTool("create_cohort", {
+          name: opts.name,
+          ...(opts.description ? { description: opts.description } : {}),
+          ...definition,
+        });
+        output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
         handleError(err);
       }

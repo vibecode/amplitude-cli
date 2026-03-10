@@ -1,10 +1,12 @@
 /**
  * User lookup commands — search and activity.
+ * Uses MCP get_users tool.
  */
 
 import { Command } from "commander";
-import { AmplitudeClient } from "../client.js";
+import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output, type OutputFormat } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 
 export function registerUserCommands(program: Command): void {
@@ -14,17 +16,15 @@ export function registerUserCommands(program: Command): void {
 
   users
     .command("search <query>")
-    .description(
-      "Search for users by Amplitude ID, user ID, or device ID"
-    )
+    .description("Search for users by user ID, device ID, or Amplitude ID")
     .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (query, opts) => {
       try {
-        const client = new AmplitudeClient();
-        const result = await client.get("/api/2/usersearch", {
-          user: query,
+        const mcp = new AmplitudeMcpClient();
+        const result = await mcp.callTool("get_users", {
+          user_id: query,
         });
-        output(result, opts.format as OutputFormat);
+        output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
         handleError(err);
       }
@@ -33,22 +33,17 @@ export function registerUserCommands(program: Command): void {
   users
     .command("activity <amplitude-id>")
     .description("Get event timeline for a specific user")
-    .option(
-      "--offset <n>",
-      "Number of events to skip (for pagination)",
-      "0"
-    )
-    .option("--limit <n>", "Max events to return", "1000")
+    .option("--limit <n>", "Max events to return", "100")
     .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (amplitudeId, opts) => {
       try {
-        const client = new AmplitudeClient();
-        const result = await client.get("/api/2/useractivity", {
-          user: amplitudeId,
-          offset: opts.offset,
-          limit: opts.limit,
+        const mcp = new AmplitudeMcpClient();
+        const result = await mcp.callTool("get_users", {
+          amplitude_id: amplitudeId,
+          include_events: true,
+          event_limit: parseInt(opts.limit),
         });
-        output(result, opts.format as OutputFormat);
+        output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
         handleError(err);
       }

@@ -1,6 +1,6 @@
 /**
  * Chart commands — search, create, query, and manage Amplitude charts.
- * Requires OAuth login (amp auth login).
+ * All via MCP server (OAuth).
  */
 import { Command } from "commander";
 export declare function registerChartCommands(program: Command): void;

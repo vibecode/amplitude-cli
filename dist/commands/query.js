@@ -1,39 +1,56 @@
 /**
- * Query commands — event segmentation, funnels, retention, chart data.
- * These are the core analytics queries.
+ * Query commands — event segmentation, funnels, retention, revenue, sessions.
+ * All queries go through the Amplitude MCP server via query_dataset.
  */
-import { AmplitudeClient } from "../client.js";
+import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 /**
- * Build the `e` (event) parameter for Amplitude queries.
- * Supports the format: "event_type" or JSON event objects.
+ * Build a query_dataset definition for event segmentation.
  */
-function buildEventParam(eventType, groupBy, filters) {
-    const event = { event_type: eventType };
-    if (groupBy) {
-        // group_by can be "user:property" or "event:property"
-        const parts = groupBy.split(":");
-        const type = parts.length > 1 ? parts[0] : "user";
-        const value = parts.length > 1 ? parts[1] : parts[0];
-        event.group_by = [{ type, value }];
+function buildSegmentDefinition(opts) {
+    const definition = {
+        chart_type: "LINE",
+        time_range: {
+            start: opts.from,
+            end: opts.to,
+        },
+        series: [
+            {
+                event: opts.event,
+                metric: opts.metric || "uniques",
+                ...(opts.groupBy ? { group_by: parseGroupBy(opts.groupBy) } : {}),
+                ...(opts.filters ? { filters: JSON.parse(opts.filters) } : {}),
+            },
+        ],
+    };
+    if (opts.interval) {
+        definition.interval = intervalToString(opts.interval);
     }
-    if (filters) {
-        try {
-            event.filters = JSON.parse(filters);
-        }
-        catch {
-            console.error('Warning: Could not parse --filters as JSON. Expected format: [{"subprop_type":"event","subprop_key":"prop","subprop_op":"is","subprop_value":["val"]}]');
-        }
-    }
-    return JSON.stringify(event);
+    return definition;
 }
 /**
- * Format date to YYYYMMDD for Amplitude API.
+ * Parse group-by string: "user:platform" → { type: "user", name: "platform" }
  */
-function formatDate(dateStr) {
-    // Accept YYYY-MM-DD or YYYYMMDD
-    return dateStr.replace(/-/g, "");
+function parseGroupBy(groupBy) {
+    const parts = groupBy.split(":");
+    if (parts.length > 1) {
+        return [{ type: parts[0], name: parts.slice(1).join(":") }];
+    }
+    return [{ type: "user", name: parts[0] }];
+}
+/**
+ * Map numeric interval to human-readable string for MCP.
+ */
+function intervalToString(interval) {
+    switch (interval) {
+        case "1": return "daily";
+        case "7": return "weekly";
+        case "30": return "monthly";
+        case "-300000": return "realtime";
+        default: return "daily";
+    }
 }
 export function registerQueryCommands(program) {
     const query = program
@@ -42,31 +59,21 @@ export function registerQueryCommands(program) {
     // --- Event Segmentation ---
     query
         .command("segment")
-        .description("Event segmentation — count events/users over time with filters and group-by")
-        .requiredOption("-e, --event <type>", "Event type to query (use _active for any active, _all for any event)")
-        .requiredOption("--from <date>", "Start date (YYYY-MM-DD or YYYYMMDD)")
-        .requiredOption("--to <date>", "End date (YYYY-MM-DD or YYYYMMDD)")
-        .option("-m, --metric <metric>", "Metric: uniques, totals, avg, pctdau, formula", "uniques")
-        .option("-i, --interval <n>", "Interval: 1 (daily), 7 (weekly), 30 (monthly), -300000 (realtime)", "1")
-        .option("-g, --group-by <property>", "Group by property (format: user:prop or event:prop)")
+        .description("Event segmentation — count events/users over time")
+        .requiredOption("-e, --event <type>", "Event type (_active, _all, or custom)")
+        .requiredOption("--from <date>", "Start date (YYYY-MM-DD)")
+        .requiredOption("--to <date>", "End date (YYYY-MM-DD)")
+        .option("-m, --metric <metric>", "Metric: uniques, totals, avg, pctdau", "uniques")
+        .option("-i, --interval <n>", "Interval: 1 (daily), 7 (weekly), 30 (monthly)", "1")
+        .option("-g, --group-by <property>", "Group by (format: user:prop or event:prop)")
         .option("--filters <json>", "Event filters as JSON array")
-        .option("--segment <json>", "Segment definition as JSON array")
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (opts) => {
         try {
-            const client = new AmplitudeClient();
-            const params = {
-                e: buildEventParam(opts.event, opts.groupBy, opts.filters),
-                start: formatDate(opts.from),
-                end: formatDate(opts.to),
-                m: opts.metric,
-                i: opts.interval,
-            };
-            if (opts.segment) {
-                params.s = opts.segment;
-            }
-            const result = await client.get("/api/2/events/segmentation", params);
-            output(result, opts.format);
+            const mcp = new AmplitudeMcpClient();
+            const definition = buildSegmentDefinition(opts);
+            const result = await mcp.queryDataset(definition);
+            output(extractMcpText(result), opts.format);
         }
         catch (err) {
             handleError(err);
@@ -75,38 +82,30 @@ export function registerQueryCommands(program) {
     // --- Funnel Analysis ---
     query
         .command("funnel")
-        .description("Funnel analysis — conversion through a sequence of events")
-        .requiredOption("-e, --events <types...>", "Event types in funnel order (space-separated)")
-        .requiredOption("--from <date>", "Start date (YYYY-MM-DD or YYYYMMDD)")
-        .requiredOption("--to <date>", "End date (YYYY-MM-DD or YYYYMMDD)")
+        .description("Funnel analysis — conversion through event sequence")
+        .requiredOption("-e, --events <types...>", "Events in funnel order (space-separated)")
+        .requiredOption("--from <date>", "Start date (YYYY-MM-DD)")
+        .requiredOption("--to <date>", "End date (YYYY-MM-DD)")
         .option("-g, --group-by <property>", "Group by property")
-        .option("--segment <json>", "Segment definition as JSON array")
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (opts) => {
         try {
-            const client = new AmplitudeClient();
-            const params = {
-                start: formatDate(opts.from),
-                end: formatDate(opts.to),
+            const mcp = new AmplitudeMcpClient();
+            const definition = {
+                chart_type: "FUNNEL",
+                time_range: {
+                    start: opts.from,
+                    end: opts.to,
+                },
+                series: opts.events.map((e) => ({
+                    event: e,
+                })),
             };
-            // Funnels take multiple e params
-            // Commander doesn't support duplicate params easily, so we build the URL manually
-            const url = new URL("/api/2/funnels", "https://placeholder.com");
-            url.searchParams.set("start", params.start);
-            url.searchParams.set("end", params.end);
-            for (const eventType of opts.events) {
-                url.searchParams.append("e", JSON.stringify({ event_type: eventType }));
-            }
             if (opts.groupBy) {
-                url.searchParams.set("g", opts.groupBy);
+                definition.group_by = parseGroupBy(opts.groupBy);
             }
-            if (opts.segment) {
-                url.searchParams.set("s", opts.segment);
-            }
-            // Build the path with query string
-            const pathWithQuery = `/api/2/funnels${url.search}`;
-            const result = await client.get(pathWithQuery);
-            output(result, opts.format);
+            const result = await mcp.queryDataset(definition);
+            output(extractMcpText(result), opts.format);
         }
         catch (err) {
             handleError(err);
@@ -118,28 +117,25 @@ export function registerQueryCommands(program) {
         .description("Retention analysis — how users return over time")
         .requiredOption("--start-event <type>", "Starting event (e.g. signup, _new)")
         .requiredOption("--return-event <type>", "Return event (e.g. _active, purchase)")
-        .requiredOption("--from <date>", "Start date (YYYY-MM-DD or YYYYMMDD)")
-        .requiredOption("--to <date>", "End date (YYYY-MM-DD or YYYYMMDD)")
-        .option("--retention-type <type>", "Type: bracket, unbounded, n-day (omit for standard retention)")
-        .option("--segment <json>", "Segment definition as JSON array")
+        .requiredOption("--from <date>", "Start date (YYYY-MM-DD)")
+        .requiredOption("--to <date>", "End date (YYYY-MM-DD)")
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (opts) => {
         try {
-            const client = new AmplitudeClient();
-            const params = {
-                se: JSON.stringify({ event_type: opts.startEvent }),
-                re: JSON.stringify({ event_type: opts.returnEvent }),
-                start: formatDate(opts.from),
-                end: formatDate(opts.to),
+            const mcp = new AmplitudeMcpClient();
+            const definition = {
+                chart_type: "RETENTION",
+                time_range: {
+                    start: opts.from,
+                    end: opts.to,
+                },
+                series: [
+                    { event: opts.startEvent, role: "start" },
+                    { event: opts.returnEvent, role: "return" },
+                ],
             };
-            if (opts.retentionType) {
-                params.rm = opts.retentionType;
-            }
-            if (opts.segment) {
-                params.s = opts.segment;
-            }
-            const result = await client.get("/api/2/retention", params);
-            output(result, opts.format);
+            const result = await mcp.queryDataset(definition);
+            output(extractMcpText(result), opts.format);
         }
         catch (err) {
             handleError(err);
@@ -152,42 +148,9 @@ export function registerQueryCommands(program) {
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (chartId, opts) => {
         try {
-            const client = new AmplitudeClient();
-            const result = await client.get(`/api/3/chart/${chartId}/query`);
-            output(result, opts.format);
-        }
-        catch (err) {
-            handleError(err);
-        }
-    });
-    // --- Active/New User Counts ---
-    query
-        .command("users")
-        .description("Get active or new user counts over time")
-        .requiredOption("--from <date>", "Start date (YYYY-MM-DD or YYYYMMDD)")
-        .requiredOption("--to <date>", "End date (YYYY-MM-DD or YYYYMMDD)")
-        .option("-m, --metric <type>", "Metric: active or new", "active")
-        .option("-i, --interval <n>", "Interval: 1 (daily), 7 (weekly), 30 (monthly)", "1")
-        .option("-g, --group-by <property>", "Group by property")
-        .option("--segment <json>", "Segment definition as JSON array")
-        .option("-f, --format <format>", "Output format: json, compact, csv", "json")
-        .action(async (opts) => {
-        try {
-            const client = new AmplitudeClient();
-            const params = {
-                start: formatDate(opts.from),
-                end: formatDate(opts.to),
-                m: opts.metric,
-                i: opts.interval,
-            };
-            if (opts.groupBy) {
-                params.g = opts.groupBy;
-            }
-            if (opts.segment) {
-                params.s = opts.segment;
-            }
-            const result = await client.get("/api/2/users", params);
-            output(result, opts.format);
+            const mcp = new AmplitudeMcpClient();
+            const result = await mcp.queryChart(chartId);
+            output(extractMcpText(result), opts.format);
         }
         catch (err) {
             handleError(err);
@@ -197,30 +160,34 @@ export function registerQueryCommands(program) {
     query
         .command("revenue")
         .description("Revenue analysis (LTV, ARPU, etc.)")
-        .requiredOption("--from <date>", "Start date (YYYY-MM-DD or YYYYMMDD)")
-        .requiredOption("--to <date>", "End date (YYYY-MM-DD or YYYYMMDD)")
+        .requiredOption("--from <date>", "Start date (YYYY-MM-DD)")
+        .requiredOption("--to <date>", "End date (YYYY-MM-DD)")
         .option("-m, --metric <type>", "Metric: total, paying, arppu, arpu, avg-revenue, ltv", "total")
         .option("-i, --interval <n>", "Interval: 1 (daily), 7 (weekly), 30 (monthly)", "1")
         .option("-g, --group-by <property>", "Group by property")
-        .option("--segment <json>", "Segment definition as JSON array")
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (opts) => {
         try {
-            const client = new AmplitudeClient();
-            const params = {
-                start: formatDate(opts.from),
-                end: formatDate(opts.to),
-                m: opts.metric,
-                i: opts.interval,
+            const mcp = new AmplitudeMcpClient();
+            const definition = {
+                chart_type: "LINE",
+                time_range: {
+                    start: opts.from,
+                    end: opts.to,
+                },
+                series: [
+                    {
+                        event: "_any_revenue_event",
+                        metric: opts.metric || "total",
+                        ...(opts.groupBy ? { group_by: parseGroupBy(opts.groupBy) } : {}),
+                    },
+                ],
             };
-            if (opts.groupBy) {
-                params.g = opts.groupBy;
+            if (opts.interval) {
+                definition.interval = intervalToString(opts.interval);
             }
-            if (opts.segment) {
-                params.s = opts.segment;
-            }
-            const result = await client.get("/api/2/revenue/day", params);
-            output(result, opts.format);
+            const result = await mcp.queryDataset(definition);
+            output(extractMcpText(result), opts.format);
         }
         catch (err) {
             handleError(err);
@@ -229,23 +196,28 @@ export function registerQueryCommands(program) {
     // --- Sessions ---
     query
         .command("sessions")
-        .description("Average sessions per user")
-        .requiredOption("--from <date>", "Start date (YYYY-MM-DD or YYYYMMDD)")
-        .requiredOption("--to <date>", "End date (YYYY-MM-DD or YYYYMMDD)")
-        .option("--segment <json>", "Segment definition as JSON array")
+        .description("Session analytics")
+        .requiredOption("--from <date>", "Start date (YYYY-MM-DD)")
+        .requiredOption("--to <date>", "End date (YYYY-MM-DD)")
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (opts) => {
         try {
-            const client = new AmplitudeClient();
-            const params = {
-                start: formatDate(opts.from),
-                end: formatDate(opts.to),
+            const mcp = new AmplitudeMcpClient();
+            const definition = {
+                chart_type: "LINE",
+                time_range: {
+                    start: opts.from,
+                    end: opts.to,
+                },
+                series: [
+                    {
+                        event: "_active",
+                        metric: "sessions",
+                    },
+                ],
             };
-            if (opts.segment) {
-                params.s = opts.segment;
-            }
-            const result = await client.get("/api/2/sessions/average", params);
-            output(result, opts.format);
+            const result = await mcp.queryDataset(definition);
+            output(extractMcpText(result), opts.format);
         }
         catch (err) {
             handleError(err);

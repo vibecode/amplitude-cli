@@ -1,6 +1,6 @@
 /**
  * Dashboard commands — search, create, and manage Amplitude dashboards.
- * Requires OAuth login (amp auth login).
+ * All via MCP server (OAuth).
  */
 import { Command } from "commander";
 export declare function registerDashboardCommands(program: Command): void;

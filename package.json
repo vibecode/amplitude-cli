@@ -1,7 +1,7 @@
 {
   "name": "amplitude-cli",
-  "version": "0.1.0",
-  "description": "CLI for querying Amplitude analytics data. Designed for AI agents and humans alike.",
+  "version": "0.3.0",
+  "description": "CLI for Amplitude analytics via MCP server. OAuth only. Designed for AI agents and humans.",
   "type": "module",
   "bin": {
     "amp": "./dist/index.js"

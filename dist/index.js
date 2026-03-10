@@ -3,12 +3,9 @@
  * amplitude-cli (amp)
  *
  * CLI for querying and managing Amplitude analytics data.
+ * All commands go through Amplitude's MCP server (OAuth).
  *
- * Two auth modes:
- *   1. API keys (AMPLITUDE_API_KEY + AMPLITUDE_SECRET_KEY) — read-only queries
- *   2. OAuth login (amp auth login) — full read+write, charts, dashboards, experiments
- *
- * Credentials stored in ~/.amplituderc or injected via environment variables.
+ * Auth: AMPLITUDE_ACCESS_TOKEN env var (Nango) or `amp auth login` (interactive).
  * Designed for AI agents (OpenClaw) and humans alike.
  */
 import { Command } from "commander";
@@ -24,14 +21,12 @@ const program = new Command();
 program
     .name("amp")
     .description("CLI for Amplitude analytics — query data, create charts, build dashboards, analyze experiments")
-    .version("0.2.0");
-// Core (API key auth — read-only)
+    .version("0.3.0");
 registerAuthCommands(program);
 registerEventCommands(program);
 registerQueryCommands(program);
 registerUserCommands(program);
 registerCohortCommands(program);
-// Extended (OAuth auth — read+write via MCP)
 registerChartCommands(program);
 registerDashboardCommands(program);
 registerExperimentCommands(program);

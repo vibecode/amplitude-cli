@@ -1,15 +1,15 @@
 /**
  * Dashboard commands — search, create, and manage Amplitude dashboards.
- * Requires OAuth login (amp auth login).
+ * All via MCP server (OAuth).
  */
 import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 export function registerDashboardCommands(program) {
     const dashboards = program
         .command("dashboards")
-        .description("Create and manage Amplitude dashboards (requires OAuth login)");
-    // ─── Search for dashboards ──────────────────────────────────────────
+        .description("Create and manage Amplitude dashboards");
     dashboards
         .command("search <query>")
         .description("Search for existing dashboards")
@@ -25,7 +25,6 @@ export function registerDashboardCommands(program) {
             handleError(err);
         }
     });
-    // ─── Get dashboard ──────────────────────────────────────────────────
     dashboards
         .command("get <dashboard-id>")
         .description("Get full dashboard definition and contents")
@@ -40,7 +39,6 @@ export function registerDashboardCommands(program) {
             handleError(err);
         }
     });
-    // ─── Create dashboard from JSON ─────────────────────────────────────
     dashboards
         .command("create")
         .description("Create a dashboard from a JSON definition (reads from stdin or --definition)")
@@ -55,7 +53,6 @@ export function registerDashboardCommands(program) {
                 rows = JSON.parse(opts.definition);
             }
             else {
-                // Read from stdin
                 const chunks = [];
                 for await (const chunk of process.stdin) {
                     chunks.push(chunk);
@@ -75,24 +72,5 @@ export function registerDashboardCommands(program) {
             handleError(err);
         }
     });
-}
-/**
- * Extract text content from MCP tool result.
- */
-function extractMcpText(result) {
-    const texts = result.content
-        .filter((c) => c.type === "text" && c.text)
-        .map((c) => c.text);
-    if (texts.length === 0)
-        return result;
-    if (texts.length === 1) {
-        try {
-            return JSON.parse(texts[0]);
-        }
-        catch {
-            return texts[0];
-        }
-    }
-    return texts;
 }
 //# sourceMappingURL=dashboards.js.map

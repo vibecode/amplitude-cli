@@ -1,31 +1,24 @@
 /**
  * Dashboard commands — search, create, and manage Amplitude dashboards.
- * Requires OAuth login (amp auth login).
+ * All via MCP server (OAuth).
  */
 
 import { Command } from "commander";
 import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output, type OutputFormat } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 
 export function registerDashboardCommands(program: Command): void {
   const dashboards = program
     .command("dashboards")
-    .description(
-      "Create and manage Amplitude dashboards (requires OAuth login)"
-    );
-
-  // ─── Search for dashboards ──────────────────────────────────────────
+    .description("Create and manage Amplitude dashboards");
 
   dashboards
     .command("search <query>")
     .description("Search for existing dashboards")
     .option("--limit <n>", "Max results", "10")
-    .option(
-      "-f, --format <format>",
-      "Output format: json, compact, csv",
-      "json"
-    )
+    .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (query, opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
@@ -36,16 +29,10 @@ export function registerDashboardCommands(program: Command): void {
       }
     });
 
-  // ─── Get dashboard ──────────────────────────────────────────────────
-
   dashboards
     .command("get <dashboard-id>")
     .description("Get full dashboard definition and contents")
-    .option(
-      "-f, --format <format>",
-      "Output format: json, compact, csv",
-      "json"
-    )
+    .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (dashboardId, opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
@@ -56,21 +43,13 @@ export function registerDashboardCommands(program: Command): void {
       }
     });
 
-  // ─── Create dashboard from JSON ─────────────────────────────────────
-
   dashboards
     .command("create")
-    .description(
-      "Create a dashboard from a JSON definition (reads from stdin or --definition)"
-    )
+    .description("Create a dashboard from a JSON definition (reads from stdin or --definition)")
     .requiredOption("--name <name>", "Dashboard name")
     .option("--description <desc>", "Dashboard description")
     .option("--definition <json>", "Dashboard rows/layout as JSON string")
-    .option(
-      "-f, --format <format>",
-      "Output format: json, compact, csv",
-      "json"
-    )
+    .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (opts) => {
       try {
         let rows: unknown[];
@@ -78,7 +57,6 @@ export function registerDashboardCommands(program: Command): void {
         if (opts.definition) {
           rows = JSON.parse(opts.definition);
         } else {
-          // Read from stdin
           const chunks: Buffer[] = [];
           for await (const chunk of process.stdin) {
             chunks.push(chunk as Buffer);
@@ -87,43 +65,16 @@ export function registerDashboardCommands(program: Command): void {
         }
 
         if (!Array.isArray(rows)) {
-          console.error(
-            "Error: Dashboard definition must be a JSON array of rows."
-          );
+          console.error("Error: Dashboard definition must be a JSON array of rows.");
           process.exit(1);
         }
 
         const mcp = new AmplitudeMcpClient();
         console.error(`Creating dashboard "${opts.name}"...`);
-        const result = await mcp.createDashboard(
-          opts.name,
-          rows,
-          opts.description
-        );
+        const result = await mcp.createDashboard(opts.name, rows, opts.description);
         output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
         handleError(err);
       }
     });
-}
-
-/**
- * Extract text content from MCP tool result.
- */
-function extractMcpText(
-  result: { content: Array<{ type: string; text?: string }> }
-): unknown {
-  const texts = result.content
-    .filter((c) => c.type === "text" && c.text)
-    .map((c) => c.text!);
-
-  if (texts.length === 0) return result;
-  if (texts.length === 1) {
-    try {
-      return JSON.parse(texts[0]);
-    } catch {
-      return texts[0];
-    }
-  }
-  return texts;
 }

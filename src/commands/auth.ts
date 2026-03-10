@@ -1,38 +1,23 @@
 /**
- * Auth commands — login (OAuth), setup (API keys), status, logout.
+ * Auth commands — login (OAuth), status, logout, tools listing.
+ * OAuth is the only auth method — via Nango (managed) or interactive login.
  */
 
 import { Command } from "commander";
-import { writeFileSync, chmodSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-import { createInterface } from "node:readline";
-import { AmplitudeClient } from "../client.js";
 import { AmplitudeMcpClient } from "../mcp-client.js";
-import { login, logout, getOAuthConfig, hasOAuthToken, readConfig } from "../utils/oauth.js";
+import { login, logout, getOAuthConfig, hasOAuthToken } from "../utils/oauth.js";
 import { output, type OutputFormat } from "../utils/format.js";
+import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
-
-function prompt(question: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
 
 export function registerAuthCommands(program: Command): void {
   const auth = program.command("auth").description("Authentication utilities");
 
-  // ─── OAuth login (full read+write access via MCP) ───────────────────
+  // ─── OAuth login (interactive) ──────────────────────────────────────
 
   auth
     .command("login")
-    .description(
-      "Log in to Amplitude via OAuth (enables chart/dashboard creation)"
-    )
+    .description("Log in to Amplitude via OAuth (opens browser)")
     .option("--region <region>", "Region: us or eu", "us")
     .action(async (opts) => {
       try {
@@ -62,7 +47,7 @@ export function registerAuthCommands(program: Command): void {
       }
     });
 
-  // ─── Logout (revoke + clear OAuth tokens) ───────────────────────────
+  // ─── Logout ─────────────────────────────────────────────────────────
 
   auth
     .command("logout")
@@ -79,97 +64,40 @@ export function registerAuthCommands(program: Command): void {
       }
     });
 
-  // ─── API key setup (read-only, simpler) ─────────────────────────────
-
-  auth
-    .command("setup")
-    .description(
-      "Save Amplitude API key + secret to ~/.amplituderc (read-only access)"
-    )
-    .option("--api-key <key>", "API key (skips prompt)")
-    .option("--secret-key <key>", "Secret key (skips prompt)")
-    .option("--region <region>", "Region: us or eu", "us")
-    .action(async (opts) => {
-      try {
-        const apiKey = opts.apiKey || (await prompt("Amplitude API Key: "));
-        const secretKey =
-          opts.secretKey || (await prompt("Amplitude Secret Key: "));
-
-        if (!apiKey || !secretKey) {
-          console.error("Error: Both API key and secret key are required.");
-          process.exit(1);
-        }
-
-        const configPath = join(homedir(), ".amplituderc");
-        // Preserve existing OAuth config if present
-        let existing: Record<string, unknown> = {};
-        try {
-          existing = JSON.parse(
-            require("node:fs").readFileSync(configPath, "utf-8")
-          );
-        } catch {
-          // No existing config
-        }
-
-        const config = {
-          ...existing,
-          apiKey,
-          secretKey,
-          region: opts.region,
-        };
-        writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
-        chmodSync(configPath, 0o600);
-        console.error(`✓ Credentials saved to ${configPath}`);
-        console.error("  Run 'amp auth status' to verify.");
-      } catch (err) {
-        if (err instanceof Error) {
-          console.error(`Error: ${err.message}`);
-          process.exit(1);
-        }
-        throw err;
-      }
-    });
-
-  // ─── Status (show what auth methods are configured) ─────────────────
+  // ─── Status ─────────────────────────────────────────────────────────
 
   auth
     .command("status")
-    .description("Show authentication status (API keys + OAuth)")
-    .option(
-      "-f, --format <format>",
-      "Output format: json, compact, csv",
-      "json"
-    )
+    .description("Show authentication status")
+    .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (opts) => {
       const status: Record<string, unknown> = {
-        apiKeys: false,
-        oauth: false,
+        authenticated: false,
+        source: null,
+        region: null,
       };
 
-      // Check API key auth
-      try {
-        const client = new AmplitudeClient();
-        const events = await client.get("/api/2/events/list");
-        const eventList = events as { data: unknown[] };
-        console.error(`✓ API keys: authenticated (region: ${client.region})`);
-        console.error(
-          `  ${eventList.data?.length ?? 0} event types in project`
-        );
-        status.apiKeys = true;
-        status.apiKeysRegion = client.region;
-        status.eventCount = eventList.data?.length ?? 0;
-      } catch {
-        console.error("✗ API keys: not configured or invalid");
-      }
-
-      // Check OAuth — env var takes priority (managed environment)
+      // Check env var (managed environment — Nango)
       if (process.env.AMPLITUDE_ACCESS_TOKEN || process.env.AMPLITUDE_OAUTH_TOKEN) {
-        console.error("✓ OAuth: token injected via environment (managed)");
-        console.error("  Can create charts/dashboards: yes");
-        status.oauth = true;
-        status.oauthSource = "env";
-        status.canWrite = true;
+        console.error("✓ OAuth: token injected via environment (Nango/managed)");
+        status.authenticated = true;
+        status.source = "env";
+
+        // Try to get context to verify
+        try {
+          const mcp = new AmplitudeMcpClient();
+          const ctx = await mcp.getContext();
+          const text = ctx.content?.[0]?.text;
+          if (text) {
+            console.error(`  Context: ${text.slice(0, 150)}`);
+            status.context = extractMcpText(ctx);
+          }
+        } catch (err) {
+          console.error("  ⚠ Token present but MCP connection failed");
+          status.verified = false;
+        }
       } else {
+        // Check config file (interactive login)
         const oauth = getOAuthConfig();
         if (oauth?.tokens?.access_token) {
           const expired =
@@ -177,41 +105,34 @@ export function registerAuthCommands(program: Command): void {
           const hasRefresh = !!oauth.tokens.refresh_token;
 
           if (expired && !hasRefresh) {
-            console.error("✗ OAuth: token expired (no refresh token — run 'amp auth login')");
-            status.oauth = false;
-            status.oauthExpired = true;
+            console.error("✗ OAuth: token expired (run 'amp auth login')");
+            status.authenticated = false;
+            status.expired = true;
           } else {
             console.error(
-              `✓ OAuth: logged in (region: ${oauth.region})${expired ? " (token expired, will auto-refresh)" : ""}`
+              `✓ OAuth: logged in (region: ${oauth.region})${expired ? " (will auto-refresh)" : ""}`
             );
-            console.error(
-              `  Scopes: ${oauth.tokens.scope || "unknown"}`
-            );
-            console.error("  Can create charts/dashboards: yes");
-            status.oauth = true;
-            status.oauthSource = "config";
-            status.oauthRegion = oauth.region;
-            status.oauthScopes = oauth.tokens.scope;
-            status.canWrite = true;
+            console.error(`  Scopes: ${oauth.tokens.scope || "unknown"}`);
+            status.authenticated = true;
+            status.source = "config";
+            status.region = oauth.region;
+            status.scopes = oauth.tokens.scope;
           }
         } else {
-          console.error("✗ OAuth: not logged in (run 'amp auth login' for write access)");
+          console.error("✗ Not authenticated");
+          console.error("  Set AMPLITUDE_ACCESS_TOKEN env var, or run 'amp auth login'");
         }
       }
 
       output(status, opts.format as OutputFormat);
     });
 
-  // ─── MCP tools listing (for debugging/discovery) ────────────────────
+  // ─── MCP tools listing ──────────────────────────────────────────────
 
   auth
     .command("tools")
-    .description("List available MCP tools (requires OAuth login)")
-    .option(
-      "-f, --format <format>",
-      "Output format: json, compact, csv",
-      "json"
-    )
+    .description("List available MCP tools")
+    .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
