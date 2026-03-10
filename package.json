@@ -1,0 +1,26 @@
+{
+  "name": "amplitude-cli",
+  "version": "0.1.0",
+  "description": "CLI for querying Amplitude analytics data. Designed for AI agents and humans alike.",
+  "type": "module",
+  "bin": {
+    "amp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
