@@ -1,6 +1,6 @@
 {
   "name": "amplitude-cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "CLI for Amplitude analytics via MCP server. OAuth only. Designed for AI agents and humans.",
   "type": "module",
   "bin": {
