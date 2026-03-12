@@ -8,6 +8,8 @@
 
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
 
+export const CLI_VERSION = "0.3.0";
+
 export interface McpToolResult {
   content: Array<{
     type: string;
@@ -19,16 +21,51 @@ export interface McpToolResult {
 
 export class AmplitudeMcpClient {
   private region: string;
+  private projectId?: string;
+  private cachedProjectId?: string;
   private sessionId?: string;
   private initialized = false;
 
-  constructor(region?: string) {
+  constructor(opts?: { region?: string; projectId?: string }) {
     const oauth = getOAuthConfig();
     this.region =
-      region ||
+      opts?.region ||
       process.env.AMPLITUDE_REGION ||
       oauth?.region ||
       "us";
+    this.projectId =
+      opts?.projectId ||
+      process.env.AMPLITUDE_PROJECT_ID ||
+      undefined;
+  }
+
+  /**
+   * Resolve the project ID. Uses explicit value, env var, or auto-discovers
+   * from get_context and caches the result.
+   */
+  async getProjectId(): Promise<string | undefined> {
+    if (this.projectId) return this.projectId;
+    if (this.cachedProjectId) return this.cachedProjectId;
+
+    try {
+      const ctx = await this.getContext();
+      const text = ctx.content?.find((c) => c.type === "text")?.text;
+      if (text) {
+        const parsed = JSON.parse(text);
+        const id =
+          parsed?.projectId ??
+          parsed?.project_id ??
+          parsed?.projects?.[0]?.id ??
+          parsed?.projects?.[0]?.projectId;
+        if (id) {
+          this.cachedProjectId = String(id);
+          return this.cachedProjectId;
+        }
+      }
+    } catch {
+      // Auto-discovery failed; proceed without projectId
+    }
+    return undefined;
   }
 
   /**
@@ -48,7 +85,7 @@ export class AmplitudeMcpClient {
       params: {
         protocolVersion: "2024-11-05",
         capabilities: {},
-        clientInfo: { name: "amplitude-cli", version: "0.2.0" },
+        clientInfo: { name: "amplitude-cli", version: CLI_VERSION },
       },
     };
 
@@ -297,8 +334,27 @@ export class AmplitudeMcpClient {
    * Query a dataset (create/preview a chart).
    * Returns data + an editId that can be saved.
    */
-  async queryDataset(definition: Record<string, unknown>): Promise<McpToolResult> {
-    return this.callTool("query_dataset", definition);
+  async queryDataset(
+    definition: Record<string, unknown>,
+    projectId?: string
+  ): Promise<McpToolResult> {
+    const pid = projectId ?? (await this.getProjectId());
+    const args: Record<string, unknown> = { definition };
+    if (pid) args.projectId = pid;
+    return this.callTool("query_dataset", args);
+  }
+
+  /**
+   * Create a chart from a query definition.
+   */
+  async createChart(
+    definition: Record<string, unknown>,
+    projectId?: string
+  ): Promise<McpToolResult> {
+    const pid = projectId ?? (await this.getProjectId());
+    const args: Record<string, unknown> = { definition };
+    if (pid) args.projectId = pid;
+    return this.callTool("create_chart", args);
   }
 
   /**

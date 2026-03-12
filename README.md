@@ -1,6 +1,6 @@
 # amplitude-cli (`amp`)
 
-CLI for querying Amplitude analytics data via Amplitude's MCP server. OAuth only — single auth method, no API keys needed. Designed for AI agents (OpenClaw) and humans alike.
+CLI for querying Amplitude analytics data via Amplitude's MCP server. OAuth only — single auth method, no API keys needed. Designed for AI agents and humans alike.
 
 ## Install
 
@@ -14,29 +14,10 @@ All commands use OAuth (via Amplitude's MCP server). Two ways to authenticate:
 
 ### Option 1: Environment variable (recommended for agents)
 
-Set `AMPLITUDE_ACCESS_TOKEN` — typically injected via Nango/OpenClaw:
+Set `AMPLITUDE_ACCESS_TOKEN` — typically injected via Nango:
 
 ```bash
 export AMPLITUDE_ACCESS_TOKEN="your-oauth-token"
-```
-
-#### OpenClaw integration
-
-In `~/.openclaw/openclaw.json`:
-
-```json
-{
-  "skills": {
-    "entries": {
-      "amplitude": {
-        "enabled": true,
-        "env": {
-          "AMPLITUDE_ACCESS_TOKEN": "your-nango-token"
-        }
-      }
-    }
-  }
-}
 ```
 
 ### Option 2: Interactive login (for humans)
@@ -48,12 +29,23 @@ amp auth login --region eu
 
 Tokens are saved to `~/.amplituderc` and auto-refreshed.
 
+## Global Options
+
+```bash
+amp --project-id <id> <command>    # target a specific Amplitude project
+```
+
+Or set `AMPLITUDE_PROJECT_ID` in the environment. If not set, the CLI auto-discovers from your token context.
+
 ## Usage
 
 ```bash
 # Auth
 amp auth status                          # check connection
-amp auth tools                           # list available MCP tools
+
+# Tool discovery
+amp tools list                           # list all available MCP tools
+amp tools describe query_dataset         # show input schema for a tool
 
 # Events
 amp events list                          # list all event types
@@ -73,11 +65,14 @@ amp query retention --start-event signup --return-event _active --from 2026-01-0
 # Revenue
 amp query revenue --from 2026-01-01 --to 2026-03-01 -m arpu
 
+# Sessions
+amp query sessions --from 2026-01-01 --to 2026-03-01
+
 # Charts
-amp charts search "DAU"                  # search charts
-amp charts get abc123                    # get chart definition
-amp charts query abc123                  # get chart data
-amp charts create --definition '{}' --save --name "My Chart"
+amp charts search "DAU"
+amp charts get abc123
+amp charts query abc123
+amp charts create --definition '{}' --name "My Chart"
 
 # Dashboards
 amp dashboards search "KPIs"
@@ -96,6 +91,10 @@ amp cohorts get abc123
 amp experiments search "onboarding"
 amp experiments get abc123
 amp experiments results abc123
+
+# Direct MCP tool calls (escape hatch)
+amp call get_session_replays '{"filters": {}}'
+amp call get_from_url '{"url": "https://app.amplitude.com/..."}'
 
 # Output formats
 amp query segment -e "signup" --from 2026-01-01 --to 2026-03-01 -f csv > signups.csv

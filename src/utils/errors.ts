@@ -6,7 +6,7 @@ import { McpError } from "../mcp-client.js";
 
 export function handleError(err: unknown): never {
   if (err instanceof McpError) {
-    console.error(`\nAmplitude MCP Error (${err.code}) calling ${err.tool}`);
+    console.error(`\nAmplitude MCP Error (${err.code}) calling "${err.tool}"`);
 
     if (err.code === 401 || err.code === 403) {
       console.error(
@@ -17,10 +17,18 @@ export function handleError(err: unknown): never {
     } else if (err.code === 429) {
       console.error("Rate limited. Try again in a few minutes.");
     } else if (err.code === -32601) {
-      console.error("Unknown MCP tool. Run 'amp auth tools' to list available tools.");
+      console.error(
+        "Unknown MCP tool. Run 'amp tools list' to see available tools,\n" +
+        "or 'amp tools describe <tool>' to see a tool's schema."
+      );
+    } else if (err.code === -32602) {
+      console.error(
+        "Invalid parameters. Run 'amp tools describe " + err.tool + "' to see the expected schema."
+      );
     }
 
-    console.error(`Detail: ${err.detail.slice(0, 500)}`);
+    const detail = err.detail.slice(0, 1000);
+    console.error(`\nDetail: ${detail}`);
     process.exit(1);
   }
 

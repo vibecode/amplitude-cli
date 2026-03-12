@@ -29,7 +29,7 @@ export function registerAuthCommands(program: Command): void {
 
         // Verify by getting context
         try {
-          const mcp = new AmplitudeMcpClient(oauthConfig.region);
+          const mcp = new AmplitudeMcpClient({ region: oauthConfig.region });
           const ctx = await mcp.getContext();
           const text = ctx.content?.[0]?.text;
           if (text) {

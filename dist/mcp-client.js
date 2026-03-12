@@ -6,17 +6,53 @@
  * The MCP server exposes tools via JSON-RPC over HTTP (Streamable HTTP transport).
  */
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
+export const CLI_VERSION = "0.3.0";
 export class AmplitudeMcpClient {
     region;
+    projectId;
+    cachedProjectId;
     sessionId;
     initialized = false;
-    constructor(region) {
+    constructor(opts) {
         const oauth = getOAuthConfig();
         this.region =
-            region ||
+            opts?.region ||
                 process.env.AMPLITUDE_REGION ||
                 oauth?.region ||
                 "us";
+        this.projectId =
+            opts?.projectId ||
+                process.env.AMPLITUDE_PROJECT_ID ||
+                undefined;
+    }
+    /**
+     * Resolve the project ID. Uses explicit value, env var, or auto-discovers
+     * from get_context and caches the result.
+     */
+    async getProjectId() {
+        if (this.projectId)
+            return this.projectId;
+        if (this.cachedProjectId)
+            return this.cachedProjectId;
+        try {
+            const ctx = await this.getContext();
+            const text = ctx.content?.find((c) => c.type === "text")?.text;
+            if (text) {
+                const parsed = JSON.parse(text);
+                const id = parsed?.projectId ??
+                    parsed?.project_id ??
+                    parsed?.projects?.[0]?.id ??
+                    parsed?.projects?.[0]?.projectId;
+                if (id) {
+                    this.cachedProjectId = String(id);
+                    return this.cachedProjectId;
+                }
+            }
+        }
+        catch {
+            // Auto-discovery failed; proceed without projectId
+        }
+        return undefined;
     }
     /**
      * Initialize MCP session. Must be called before any tool calls.
@@ -34,7 +70,7 @@ export class AmplitudeMcpClient {
             params: {
                 protocolVersion: "2024-11-05",
                 capabilities: {},
-                clientInfo: { name: "amplitude-cli", version: "0.2.0" },
+                clientInfo: { name: "amplitude-cli", version: CLI_VERSION },
             },
         };
         const res = await fetch(`${baseUrl}/mcp`, {
@@ -224,8 +260,22 @@ export class AmplitudeMcpClient {
      * Query a dataset (create/preview a chart).
      * Returns data + an editId that can be saved.
      */
-    async queryDataset(definition) {
-        return this.callTool("query_dataset", definition);
+    async queryDataset(definition, projectId) {
+        const pid = projectId ?? (await this.getProjectId());
+        const args = { definition };
+        if (pid)
+            args.projectId = pid;
+        return this.callTool("query_dataset", args);
+    }
+    /**
+     * Create a chart from a query definition.
+     */
+    async createChart(definition, projectId) {
+        const pid = projectId ?? (await this.getProjectId());
+        const args = { definition };
+        if (pid)
+            args.projectId = pid;
+        return this.callTool("create_chart", args);
     }
     /**
      * Save a chart from query_dataset results.

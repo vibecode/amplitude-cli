@@ -4,7 +4,7 @@
 import { McpError } from "../mcp-client.js";
 export function handleError(err) {
     if (err instanceof McpError) {
-        console.error(`\nAmplitude MCP Error (${err.code}) calling ${err.tool}`);
+        console.error(`\nAmplitude MCP Error (${err.code}) calling "${err.tool}"`);
         if (err.code === 401 || err.code === 403) {
             console.error("OAuth token invalid or expired.\n" +
                 "If using Nango: check that AMPLITUDE_ACCESS_TOKEN is set.\n" +
@@ -14,9 +14,14 @@ export function handleError(err) {
             console.error("Rate limited. Try again in a few minutes.");
         }
         else if (err.code === -32601) {
-            console.error("Unknown MCP tool. Run 'amp auth tools' to list available tools.");
+            console.error("Unknown MCP tool. Run 'amp tools list' to see available tools,\n" +
+                "or 'amp tools describe <tool>' to see a tool's schema.");
         }
-        console.error(`Detail: ${err.detail.slice(0, 500)}`);
+        else if (err.code === -32602) {
+            console.error("Invalid parameters. Run 'amp tools describe " + err.tool + "' to see the expected schema.");
+        }
+        const detail = err.detail.slice(0, 1000);
+        console.error(`\nDetail: ${detail}`);
         process.exit(1);
     }
     if (err instanceof Error) {

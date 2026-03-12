@@ -61,9 +61,8 @@ export function registerChartCommands(program: Command): void {
     .command("create")
     .description("Create a chart from a JSON definition (reads from stdin or --definition)")
     .option("--definition <json>", "Chart definition as JSON string")
-    .option("--name <name>", "Chart name (required for save)")
+    .option("--name <name>", "Chart name")
     .option("--description <desc>", "Chart description")
-    .option("--save", "Save the chart after creation", false)
     .option("-f, --format <format>", "Output format: json, compact, csv", "json")
     .action(async (opts) => {
       try {
@@ -81,25 +80,24 @@ export function registerChartCommands(program: Command): void {
 
         const mcp = new AmplitudeMcpClient();
 
-        console.error("Querying dataset...");
-        const result = await mcp.queryDataset(definition);
+        console.error("Creating chart...");
+        const result = await mcp.createChart(definition);
         const resultText = extractMcpText(result);
 
-        if (opts.save && opts.name) {
+        if (opts.name) {
           const editId = extractEditId(resultText);
-          if (editId) {
-            console.error(`Saving chart as "${opts.name}"...`);
-            const saveResult = await mcp.saveChart(editId, opts.name, opts.description);
-            output(extractMcpText(saveResult), opts.format as OutputFormat);
-          } else {
-            console.error("Warning: Could not extract editId. Chart not saved.");
+          if (!editId) {
+            console.error("Error: Chart was created but no editId was returned. Cannot save with name.");
+            console.error("The chart data is printed below.");
             output(resultText, opts.format as OutputFormat);
+            process.exit(1);
           }
+          console.error(`Saving chart as "${opts.name}"...`);
+          const saveResult = await mcp.saveChart(editId, opts.name, opts.description);
+          output(extractMcpText(saveResult), opts.format as OutputFormat);
         } else {
           output(resultText, opts.format as OutputFormat);
-          if (!opts.save) {
-            console.error("\nChart previewed but not saved. Use --save --name 'Name' to save.");
-          }
+          console.error("\nChart created but not named. Use --name 'Name' to save permanently.");
         }
       } catch (err) {
         handleError(err);

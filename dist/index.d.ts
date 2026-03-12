@@ -6,6 +6,6 @@
  * All commands go through Amplitude's MCP server (OAuth).
  *
  * Auth: AMPLITUDE_ACCESS_TOKEN env var (Nango) or `amp auth login` (interactive).
- * Designed for AI agents (OpenClaw) and humans alike.
+ * Designed for AI agents and humans alike.
  */
 export {};

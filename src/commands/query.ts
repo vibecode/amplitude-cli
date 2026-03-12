@@ -1,6 +1,9 @@
 /**
  * Query commands — event segmentation, funnels, retention, revenue, sessions.
  * All queries go through the Amplitude MCP server via query_dataset.
+ *
+ * Payload format matches the MCP server's query_dataset tool schema:
+ *   { projectId, definition: { type, params: { ... } } }
  */
 
 import { Command } from "commander";
@@ -9,9 +12,6 @@ import { output, type OutputFormat } from "../utils/format.js";
 import { extractMcpText } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
 
-/**
- * Build a query_dataset definition for event segmentation.
- */
 function buildSegmentDefinition(opts: {
   event: string;
   from: string;
@@ -21,31 +21,74 @@ function buildSegmentDefinition(opts: {
   groupBy?: string;
   filters?: string;
 }): Record<string, unknown> {
-  const definition: Record<string, unknown> = {
-    chart_type: "LINE",
-    time_range: {
-      start: opts.from,
-      end: opts.to,
-    },
-    series: [
-      {
-        event: opts.event,
-        metric: opts.metric || "uniques",
-        ...(opts.groupBy ? { group_by: parseGroupBy(opts.groupBy) } : {}),
-        ...(opts.filters ? { filters: JSON.parse(opts.filters) } : {}),
-      },
-    ],
+  const eventDef: Record<string, unknown> = {
+    event_type: opts.event,
+    filters: opts.filters ? JSON.parse(opts.filters) : [],
+    group_by: opts.groupBy ? parseGroupBy(opts.groupBy) : [],
   };
 
-  if (opts.interval) {
-    definition.interval = intervalToString(opts.interval);
-  }
+  return {
+    type: "eventsSegmentation",
+    params: {
+      range: "custom",
+      start: opts.from,
+      end: opts.to,
+      events: [eventDef],
+      metric: opts.metric || "uniques",
+      interval: parseInterval(opts.interval),
+      countGroup: "User",
+      groupBy: opts.groupBy ? parseGroupBy(opts.groupBy) : [],
+      segments: [{ conditions: [] }],
+    },
+  };
+}
 
-  return definition;
+function buildFunnelDefinition(opts: {
+  events: string[];
+  from: string;
+  to: string;
+  groupBy?: string;
+}): Record<string, unknown> {
+  return {
+    type: "funnel",
+    params: {
+      range: "custom",
+      start: opts.from,
+      end: opts.to,
+      events: opts.events.map((e: string) => ({
+        event_type: e,
+        filters: [],
+        group_by: [],
+      })),
+      countGroup: "User",
+      groupBy: opts.groupBy ? parseGroupBy(opts.groupBy) : [],
+      segments: [{ conditions: [] }],
+    },
+  };
+}
+
+function buildRetentionDefinition(opts: {
+  startEvent: string;
+  returnEvent: string;
+  from: string;
+  to: string;
+}): Record<string, unknown> {
+  return {
+    type: "retention",
+    params: {
+      range: "custom",
+      start: opts.from,
+      end: opts.to,
+      startEvent: { event_type: opts.startEvent, filters: [] },
+      returnEvent: { event_type: opts.returnEvent, filters: [] },
+      countGroup: "User",
+      segments: [{ conditions: [] }],
+    },
+  };
 }
 
 /**
- * Parse group-by string: "user:platform" → { type: "user", name: "platform" }
+ * Parse group-by string: "user:platform" → [{ type: "user", name: "platform" }]
  */
 function parseGroupBy(groupBy: string): Record<string, string>[] {
   const parts = groupBy.split(":");
@@ -56,16 +99,12 @@ function parseGroupBy(groupBy: string): Record<string, string>[] {
 }
 
 /**
- * Map numeric interval to human-readable string for MCP.
+ * Parse interval flag to numeric value for MCP.
  */
-function intervalToString(interval: string): string {
-  switch (interval) {
-    case "1": return "daily";
-    case "7": return "weekly";
-    case "30": return "monthly";
-    case "-300000": return "realtime";
-    default: return "daily";
-  }
+function parseInterval(interval?: string): number {
+  if (!interval) return 1;
+  const n = parseInt(interval, 10);
+  return isNaN(n) ? 1 : n;
 }
 
 export function registerQueryCommands(program: Command): void {
@@ -108,21 +147,7 @@ export function registerQueryCommands(program: Command): void {
     .action(async (opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
-        const definition: Record<string, unknown> = {
-          chart_type: "FUNNEL",
-          time_range: {
-            start: opts.from,
-            end: opts.to,
-          },
-          series: opts.events.map((e: string) => ({
-            event: e,
-          })),
-        };
-
-        if (opts.groupBy) {
-          definition.group_by = parseGroupBy(opts.groupBy);
-        }
-
+        const definition = buildFunnelDefinition(opts);
         const result = await mcp.queryDataset(definition);
         output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
@@ -142,17 +167,7 @@ export function registerQueryCommands(program: Command): void {
     .action(async (opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
-        const definition: Record<string, unknown> = {
-          chart_type: "RETENTION",
-          time_range: {
-            start: opts.from,
-            end: opts.to,
-          },
-          series: [
-            { event: opts.startEvent, role: "start" },
-            { event: opts.returnEvent, role: "return" },
-          ],
-        };
+        const definition = buildRetentionDefinition(opts);
         const result = await mcp.queryDataset(definition);
         output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
@@ -188,25 +203,14 @@ export function registerQueryCommands(program: Command): void {
     .action(async (opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
-        const definition: Record<string, unknown> = {
-          chart_type: "LINE",
-          time_range: {
-            start: opts.from,
-            end: opts.to,
-          },
-          series: [
-            {
-              event: "_any_revenue_event",
-              metric: opts.metric || "total",
-              ...(opts.groupBy ? { group_by: parseGroupBy(opts.groupBy) } : {}),
-            },
-          ],
-        };
-
-        if (opts.interval) {
-          definition.interval = intervalToString(opts.interval);
-        }
-
+        const definition = buildSegmentDefinition({
+          event: "_any_revenue_event",
+          from: opts.from,
+          to: opts.to,
+          metric: opts.metric || "total",
+          interval: opts.interval,
+          groupBy: opts.groupBy,
+        });
         const result = await mcp.queryDataset(definition);
         output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {
@@ -224,19 +228,12 @@ export function registerQueryCommands(program: Command): void {
     .action(async (opts) => {
       try {
         const mcp = new AmplitudeMcpClient();
-        const definition: Record<string, unknown> = {
-          chart_type: "LINE",
-          time_range: {
-            start: opts.from,
-            end: opts.to,
-          },
-          series: [
-            {
-              event: "_active",
-              metric: "sessions",
-            },
-          ],
-        };
+        const definition = buildSegmentDefinition({
+          event: "_active",
+          from: opts.from,
+          to: opts.to,
+          metric: "sessions",
+        });
         const result = await mcp.queryDataset(definition);
         output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {

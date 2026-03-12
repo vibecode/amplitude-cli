@@ -5,6 +5,7 @@
  *
  * The MCP server exposes tools via JSON-RPC over HTTP (Streamable HTTP transport).
  */
+export declare const CLI_VERSION = "0.3.0";
 export interface McpToolResult {
     content: Array<{
         type: string;
@@ -15,9 +16,19 @@ export interface McpToolResult {
 }
 export declare class AmplitudeMcpClient {
     private region;
+    private projectId?;
+    private cachedProjectId?;
     private sessionId?;
     private initialized;
-    constructor(region?: string);
+    constructor(opts?: {
+        region?: string;
+        projectId?: string;
+    });
+    /**
+     * Resolve the project ID. Uses explicit value, env var, or auto-discovers
+     * from get_context and caches the result.
+     */
+    getProjectId(): Promise<string | undefined>;
     /**
      * Initialize MCP session. Must be called before any tool calls.
      * Auto-called by callTool if not yet initialized.
@@ -56,7 +67,11 @@ export declare class AmplitudeMcpClient {
      * Query a dataset (create/preview a chart).
      * Returns data + an editId that can be saved.
      */
-    queryDataset(definition: Record<string, unknown>): Promise<McpToolResult>;
+    queryDataset(definition: Record<string, unknown>, projectId?: string): Promise<McpToolResult>;
+    /**
+     * Create a chart from a query definition.
+     */
+    createChart(definition: Record<string, unknown>, projectId?: string): Promise<McpToolResult>;
     /**
      * Save a chart from query_dataset results.
      */

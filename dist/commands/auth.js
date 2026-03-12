@@ -21,7 +21,7 @@ export function registerAuthCommands(program) {
             console.error(`Scopes: ${oauthConfig.tokens.scope || "mcp:read mcp:write offline_access"}`);
             // Verify by getting context
             try {
-                const mcp = new AmplitudeMcpClient(oauthConfig.region);
+                const mcp = new AmplitudeMcpClient({ region: oauthConfig.region });
                 const ctx = await mcp.getContext();
                 const text = ctx.content?.[0]?.text;
                 if (text) {
