@@ -18,7 +18,7 @@ export function registerUserCommands(program) {
         try {
             const mcp = new AmplitudeMcpClient();
             const result = await mcp.callTool("get_users", {
-                user_id: query,
+                userId: query,
             });
             output(extractMcpText(result), opts.format);
         }
@@ -35,9 +35,9 @@ export function registerUserCommands(program) {
         try {
             const mcp = new AmplitudeMcpClient();
             const result = await mcp.callTool("get_users", {
-                amplitude_id: amplitudeId,
-                include_events: true,
-                event_limit: parseInt(opts.limit),
+                amplitudeId,
+                includeEvents: true,
+                eventLimit: parseInt(opts.limit),
             });
             output(extractMcpText(result), opts.format);
         }

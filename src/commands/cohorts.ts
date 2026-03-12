@@ -39,7 +39,7 @@ export function registerCohortCommands(program: Command): void {
       try {
         const mcp = new AmplitudeMcpClient();
         const result = await mcp.callTool("get_cohorts", {
-          cohort_ids: cohortIds,
+          cohortIds,
         });
         output(extractMcpText(result), opts.format as OutputFormat);
       } catch (err) {

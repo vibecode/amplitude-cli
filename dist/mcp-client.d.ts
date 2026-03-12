@@ -5,7 +5,7 @@
  *
  * The MCP server exposes tools via JSON-RPC over HTTP (Streamable HTTP transport).
  */
-export declare const CLI_VERSION = "0.3.0";
+export declare const CLI_VERSION = "0.3.1";
 export interface McpToolResult {
     content: Array<{
         type: string;

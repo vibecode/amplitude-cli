@@ -8,7 +8,7 @@
 
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
 
-export const CLI_VERSION = "0.3.0";
+export const CLI_VERSION = "0.3.1";
 
 export interface McpToolResult {
   content: Array<{
@@ -53,10 +53,11 @@ export class AmplitudeMcpClient {
       if (text) {
         const parsed = JSON.parse(text);
         const id =
+          parsed?.appId ??
           parsed?.projectId ??
           parsed?.project_id ??
-          parsed?.projects?.[0]?.id ??
-          parsed?.projects?.[0]?.projectId;
+          parsed?.projects?.[0]?.appId ??
+          parsed?.projects?.[0]?.id;
         if (id) {
           this.cachedProjectId = String(id);
           return this.cachedProjectId;
@@ -304,7 +305,7 @@ export class AmplitudeMcpClient {
   ): Promise<McpToolResult> {
     return this.callTool("search", {
       query,
-      ...(entityTypes && { entity_types: entityTypes }),
+      ...(entityTypes && { entityTypes }),
       ...(limit && { limit }),
     });
   }
@@ -320,14 +321,14 @@ export class AmplitudeMcpClient {
    * Get chart definitions by ID.
    */
   async getCharts(chartIds: string[]): Promise<McpToolResult> {
-    return this.callTool("get_charts", { chart_ids: chartIds });
+    return this.callTool("get_charts", { chartIds });
   }
 
   /**
    * Get dashboard by ID.
    */
   async getDashboard(dashboardId: string): Promise<McpToolResult> {
-    return this.callTool("get_dashboard", { dashboard_id: dashboardId });
+    return this.callTool("get_dashboard", { dashboardId });
   }
 
   /**
@@ -366,7 +367,7 @@ export class AmplitudeMcpClient {
     description?: string
   ): Promise<McpToolResult> {
     return this.callTool("save_chart_edits", {
-      edit_id: editId,
+      editId,
       name,
       ...(description && { description }),
     });
@@ -391,14 +392,14 @@ export class AmplitudeMcpClient {
    * Get event properties for an event type.
    */
   async getEventProperties(eventType: string): Promise<McpToolResult> {
-    return this.callTool("get_event_properties", { event_type: eventType });
+    return this.callTool("get_event_properties", { eventType });
   }
 
   /**
    * Query an existing chart's data.
    */
   async queryChart(chartId: string): Promise<McpToolResult> {
-    return this.callTool("query_chart", { chart_id: chartId });
+    return this.callTool("query_chart", { chartId });
   }
 
   /**
@@ -406,7 +407,7 @@ export class AmplitudeMcpClient {
    */
   async getExperiments(experimentIds: string[]): Promise<McpToolResult> {
     return this.callTool("get_experiments", {
-      experiment_ids: experimentIds,
+      experimentIds,
     });
   }
 
@@ -415,7 +416,7 @@ export class AmplitudeMcpClient {
    */
   async queryExperiment(experimentId: string): Promise<McpToolResult> {
     return this.callTool("query_experiment", {
-      experiment_id: experimentId,
+      experimentId,
     });
   }
 }

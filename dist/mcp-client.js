@@ -6,7 +6,7 @@
  * The MCP server exposes tools via JSON-RPC over HTTP (Streamable HTTP transport).
  */
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
-export const CLI_VERSION = "0.3.0";
+export const CLI_VERSION = "0.3.1";
 export class AmplitudeMcpClient {
     region;
     projectId;
@@ -39,10 +39,11 @@ export class AmplitudeMcpClient {
             const text = ctx.content?.find((c) => c.type === "text")?.text;
             if (text) {
                 const parsed = JSON.parse(text);
-                const id = parsed?.projectId ??
+                const id = parsed?.appId ??
+                    parsed?.projectId ??
                     parsed?.project_id ??
-                    parsed?.projects?.[0]?.id ??
-                    parsed?.projects?.[0]?.projectId;
+                    parsed?.projects?.[0]?.appId ??
+                    parsed?.projects?.[0]?.id;
                 if (id) {
                     this.cachedProjectId = String(id);
                     return this.cachedProjectId;
@@ -234,7 +235,7 @@ export class AmplitudeMcpClient {
     async search(query, entityTypes, limit) {
         return this.callTool("search", {
             query,
-            ...(entityTypes && { entity_types: entityTypes }),
+            ...(entityTypes && { entityTypes }),
             ...(limit && { limit }),
         });
     }
@@ -248,13 +249,13 @@ export class AmplitudeMcpClient {
      * Get chart definitions by ID.
      */
     async getCharts(chartIds) {
-        return this.callTool("get_charts", { chart_ids: chartIds });
+        return this.callTool("get_charts", { chartIds });
     }
     /**
      * Get dashboard by ID.
      */
     async getDashboard(dashboardId) {
-        return this.callTool("get_dashboard", { dashboard_id: dashboardId });
+        return this.callTool("get_dashboard", { dashboardId });
     }
     /**
      * Query a dataset (create/preview a chart).
@@ -282,7 +283,7 @@ export class AmplitudeMcpClient {
      */
     async saveChart(editId, name, description) {
         return this.callTool("save_chart_edits", {
-            edit_id: editId,
+            editId,
             name,
             ...(description && { description }),
         });
@@ -301,20 +302,20 @@ export class AmplitudeMcpClient {
      * Get event properties for an event type.
      */
     async getEventProperties(eventType) {
-        return this.callTool("get_event_properties", { event_type: eventType });
+        return this.callTool("get_event_properties", { eventType });
     }
     /**
      * Query an existing chart's data.
      */
     async queryChart(chartId) {
-        return this.callTool("query_chart", { chart_id: chartId });
+        return this.callTool("query_chart", { chartId });
     }
     /**
      * Get experiment details.
      */
     async getExperiments(experimentIds) {
         return this.callTool("get_experiments", {
-            experiment_ids: experimentIds,
+            experimentIds,
         });
     }
     /**
@@ -322,7 +323,7 @@ export class AmplitudeMcpClient {
      */
     async queryExperiment(experimentId) {
         return this.callTool("query_experiment", {
-            experiment_id: experimentId,
+            experimentId,
         });
     }
 }
