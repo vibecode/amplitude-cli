@@ -8,7 +8,7 @@
 
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
 
-export const CLI_VERSION = "0.3.1";
+export const CLI_VERSION = "0.3.2";
 
 export interface McpToolResult {
   content: Array<{
