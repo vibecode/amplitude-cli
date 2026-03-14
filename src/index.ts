@@ -22,6 +22,8 @@ import { registerDashboardCommands } from "./commands/dashboards.js";
 import { registerExperimentCommands } from "./commands/experiments.js";
 import { registerCallCommand } from "./commands/call.js";
 import { registerToolsCommands } from "./commands/tools.js";
+import { registerFunnelCommand } from "./commands/funnel.js";
+import { registerRetentionCommand } from "./commands/retention.js";
 
 const program = new Command();
 
@@ -50,5 +52,7 @@ registerDashboardCommands(program);
 registerExperimentCommands(program);
 registerCallCommand(program);
 registerToolsCommands(program);
+registerFunnelCommand(program);
+registerRetentionCommand(program);
 
 program.parse();

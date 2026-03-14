@@ -6,7 +6,7 @@
  * The MCP server exposes tools via JSON-RPC over HTTP (Streamable HTTP transport).
  */
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
-export const CLI_VERSION = "0.3.1";
+export const CLI_VERSION = "0.4.0";
 export class AmplitudeMcpClient {
     region;
     projectId;
@@ -263,7 +263,12 @@ export class AmplitudeMcpClient {
      */
     async queryDataset(definition, projectId) {
         const pid = projectId ?? (await this.getProjectId());
-        const args = { definition };
+        // MCP query_dataset expects definition.app to be set to the project ID
+        const def = { ...definition };
+        if (pid && !def.app) {
+            def.app = pid;
+        }
+        const args = { definition: def };
         if (pid)
             args.projectId = pid;
         return this.callTool("query_dataset", args);
@@ -280,12 +285,15 @@ export class AmplitudeMcpClient {
     }
     /**
      * Save a chart from query_dataset results.
+     * The save_chart_edits MCP tool expects: { charts: [{ editId, name, description }] }
      */
     async saveChart(editId, name, description) {
         return this.callTool("save_chart_edits", {
-            editId,
-            name,
-            ...(description && { description }),
+            charts: [{
+                    editId,
+                    name,
+                    description: description || "",
+                }],
         });
     }
     /**

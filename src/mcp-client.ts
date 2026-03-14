@@ -8,7 +8,7 @@
 
 import { getAccessToken, getMcpBaseUrl, getOAuthConfig } from "./utils/oauth.js";
 
-export const CLI_VERSION = "0.3.2";
+export const CLI_VERSION = "0.4.0";
 
 export interface McpToolResult {
   content: Array<{
@@ -340,7 +340,12 @@ export class AmplitudeMcpClient {
     projectId?: string
   ): Promise<McpToolResult> {
     const pid = projectId ?? (await this.getProjectId());
-    const args: Record<string, unknown> = { definition };
+    // MCP query_dataset expects definition.app to be set to the project ID
+    const def = { ...definition };
+    if (pid && !def.app) {
+      def.app = pid;
+    }
+    const args: Record<string, unknown> = { definition: def };
     if (pid) args.projectId = pid;
     return this.callTool("query_dataset", args);
   }
@@ -360,6 +365,7 @@ export class AmplitudeMcpClient {
 
   /**
    * Save a chart from query_dataset results.
+   * The save_chart_edits MCP tool expects: { charts: [{ editId, name, description }] }
    */
   async saveChart(
     editId: string,
@@ -367,9 +373,11 @@ export class AmplitudeMcpClient {
     description?: string
   ): Promise<McpToolResult> {
     return this.callTool("save_chart_edits", {
-      editId,
-      name,
-      ...(description && { description }),
+      charts: [{
+        editId,
+        name,
+        description: description || "",
+      }],
     });
   }
 
