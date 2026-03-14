@@ -6,6 +6,47 @@ import { AmplitudeMcpClient } from "../mcp-client.js";
 import { output } from "../utils/format.js";
 import { extractMcpText, extractEditId } from "../utils/mcp-helpers.js";
 import { handleError } from "../utils/errors.js";
+import { parseFilter, parseGroupBy, buildDateRange, } from "../utils/filters.js";
+/** Build a segment/event-segmentation definition from simple flags. */
+function buildChartDefinition(opts) {
+    const metric = opts.metric || "uniques";
+    const interval = opts.interval !== undefined ? parseInt(opts.interval, 10) : 1;
+    const countGroup = opts.countGroup || "User";
+    const events = [
+        {
+            event_type: opts.event,
+        },
+    ];
+    const segments = [];
+    // Parse filters
+    if (opts.filter && opts.filter.length > 0) {
+        const filters = opts.filter.map((f) => parseFilter(f));
+        segments.push({
+            filters,
+            group_type: countGroup,
+        });
+    }
+    else {
+        segments.push({ group_type: countGroup });
+    }
+    const definition = {
+        type: "segmentation",
+        events,
+        segments,
+        metric,
+        interval,
+    };
+    // Group-by
+    if (opts.groupBy && opts.groupBy.length > 0) {
+        definition.group_by = opts.groupBy.map((g) => parseGroupBy(g));
+    }
+    // Date range
+    const dateRange = buildDateRange(opts.range, opts.start, opts.end);
+    if (dateRange) {
+        definition.date_range = dateRange;
+    }
+    return definition;
+}
 export function registerChartCommands(program) {
     const charts = program
         .command("charts")
@@ -55,43 +96,78 @@ export function registerChartCommands(program) {
     });
     charts
         .command("create")
-        .description("Create a chart from a JSON definition (reads from stdin or --definition)")
-        .option("--definition <json>", "Chart definition as JSON string")
+        .description("Create a chart from flags or a JSON definition")
+        // --- Raw JSON path ---
+        .option("--definition <json>", "Chart definition as JSON string (or pipe via stdin)")
+        // --- Flag-based path ---
+        .option("--event <type>", "Event type (e.g. _active, Purchase)")
+        .option("--metric <metric>", "Metric: uniques (default), totals, average, pctdau, sums, value_avg", "uniques")
+        .option("--interval <n>", "Interval: 1=daily (default), 7=weekly, 30=monthly, 90=quarterly, -3600000=hourly", "1")
+        .option("--range <range>", 'Date range name e.g. "Last 30 Days"')
+        .option("--start <date>", "Start date (ISO or unix timestamp)")
+        .option("--end <date>", "End date (ISO or unix timestamp)")
+        .option("--filter <expr>", 'Repeatable filter. Format: "user:country is US"', (v, acc) => { acc.push(v); return acc; }, [])
+        .option("--group-by <expr>", 'Repeatable group-by. Format: "user:country"', (v, acc) => { acc.push(v); return acc; }, [])
+        .option("--count-group <group>", "Count group: User (default), Event, or custom", "User")
+        // --- Save options ---
+        .option("--save", "Save the chart permanently after querying")
         .option("--name <name>", "Chart name")
         .option("--description <desc>", "Chart description")
         .option("-f, --format <format>", "Output format: json, compact, csv", "json")
         .action(async (opts) => {
         try {
             let definition;
-            if (opts.definition) {
+            if (opts.event) {
+                // Flag-based path
+                definition = buildChartDefinition({
+                    event: opts.event,
+                    metric: opts.metric,
+                    interval: opts.interval,
+                    range: opts.range,
+                    start: opts.start,
+                    end: opts.end,
+                    filter: opts.filter,
+                    groupBy: opts.groupBy,
+                    countGroup: opts.countGroup,
+                });
+            }
+            else if (opts.definition) {
                 definition = JSON.parse(opts.definition);
             }
             else {
+                // Try stdin
                 const chunks = [];
                 for await (const chunk of process.stdin) {
                     chunks.push(chunk);
                 }
-                definition = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-            }
-            const mcp = new AmplitudeMcpClient();
-            console.error("Creating chart...");
-            const result = await mcp.createChart(definition);
-            const resultText = extractMcpText(result);
-            if (opts.name) {
-                const editId = extractEditId(resultText);
-                if (!editId) {
-                    console.error("Error: Chart was created but no editId was returned. Cannot save with name.");
-                    console.error("The chart data is printed below.");
-                    output(resultText, opts.format);
+                const raw = Buffer.concat(chunks).toString("utf-8").trim();
+                if (!raw) {
+                    console.error("Error: Provide --event <type>, --definition <json>, or pipe JSON via stdin.");
                     process.exit(1);
                 }
-                console.error(`Saving chart as "${opts.name}"...`);
-                const saveResult = await mcp.saveChart(editId, opts.name, opts.description);
+                definition = JSON.parse(raw);
+            }
+            const mcp = new AmplitudeMcpClient();
+            console.error("Querying dataset...");
+            const result = await mcp.queryDataset(definition);
+            const resultData = extractMcpText(result);
+            const shouldSave = opts.save || opts.name;
+            if (shouldSave) {
+                const editId = extractEditId(resultData);
+                if (!editId) {
+                    console.error("Error: No editId returned from query_dataset. Cannot save chart.");
+                    console.error("Query result:");
+                    output(resultData, opts.format);
+                    process.exit(1);
+                }
+                const chartName = opts.name || "Untitled Chart";
+                console.error(`Saving chart as "${chartName}"...`);
+                const saveResult = await mcp.saveChart(editId, chartName, opts.description);
                 output(extractMcpText(saveResult), opts.format);
             }
             else {
-                output(resultText, opts.format);
-                console.error("\nChart created but not named. Use --name 'Name' to save permanently.");
+                output(resultData, opts.format);
+                console.error("\nChart queried but not saved. Use --save --name 'Name' to save permanently.");
             }
         }
         catch (err) {

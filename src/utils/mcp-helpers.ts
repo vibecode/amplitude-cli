@@ -35,6 +35,7 @@ export function extractEditId(data: unknown): string | null {
   if (typeof data === "object" && data !== null) {
     const obj = data as Record<string, unknown>;
     if (typeof obj.editId === "string") return obj.editId;
+    if (typeof obj.chartEditId === "string") return obj.chartEditId;
     if (typeof obj.edit_id === "string") return obj.edit_id;
     for (const key of Object.keys(obj)) {
       const val = obj[key];

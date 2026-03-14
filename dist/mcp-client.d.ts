@@ -5,7 +5,7 @@
  *
  * The MCP server exposes tools via JSON-RPC over HTTP (Streamable HTTP transport).
  */
-export declare const CLI_VERSION = "0.3.1";
+export declare const CLI_VERSION = "0.4.0";
 export interface McpToolResult {
     content: Array<{
         type: string;
@@ -74,6 +74,7 @@ export declare class AmplitudeMcpClient {
     createChart(definition: Record<string, unknown>, projectId?: string): Promise<McpToolResult>;
     /**
      * Save a chart from query_dataset results.
+     * The save_chart_edits MCP tool expects: { charts: [{ editId, name, description }] }
      */
     saveChart(editId: string, name: string, description?: string): Promise<McpToolResult>;
     /**

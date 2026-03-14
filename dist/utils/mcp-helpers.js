@@ -33,6 +33,8 @@ export function extractEditId(data) {
         const obj = data;
         if (typeof obj.editId === "string")
             return obj.editId;
+        if (typeof obj.chartEditId === "string")
+            return obj.chartEditId;
         if (typeof obj.edit_id === "string")
             return obj.edit_id;
         for (const key of Object.keys(obj)) {
