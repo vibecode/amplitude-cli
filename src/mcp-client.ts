@@ -340,7 +340,12 @@ export class AmplitudeMcpClient {
     projectId?: string
   ): Promise<McpToolResult> {
     const pid = projectId ?? (await this.getProjectId());
-    const args: Record<string, unknown> = { definition };
+    // MCP query_dataset expects definition.app to be set to the project ID
+    const def = { ...definition };
+    if (pid && !def.app) {
+      def.app = pid;
+    }
+    const args: Record<string, unknown> = { definition: def };
     if (pid) args.projectId = pid;
     return this.callTool("query_dataset", args);
   }
@@ -367,10 +372,12 @@ export class AmplitudeMcpClient {
     name: string,
     description?: string
   ): Promise<McpToolResult> {
-    const chartEntry: Record<string, unknown> = { editId, name };
-    if (description) chartEntry.description = description;
     return this.callTool("save_chart_edits", {
-      charts: [chartEntry],
+      charts: [{
+        editId,
+        name,
+        description: description || "",
+      }],
     });
   }
 

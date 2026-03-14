@@ -263,7 +263,12 @@ export class AmplitudeMcpClient {
      */
     async queryDataset(definition, projectId) {
         const pid = projectId ?? (await this.getProjectId());
-        const args = { definition };
+        // MCP query_dataset expects definition.app to be set to the project ID
+        const def = { ...definition };
+        if (pid && !def.app) {
+            def.app = pid;
+        }
+        const args = { definition: def };
         if (pid)
             args.projectId = pid;
         return this.callTool("query_dataset", args);
@@ -283,11 +288,12 @@ export class AmplitudeMcpClient {
      * The save_chart_edits MCP tool expects: { charts: [{ editId, name, description }] }
      */
     async saveChart(editId, name, description) {
-        const chartEntry = { editId, name };
-        if (description)
-            chartEntry.description = description;
         return this.callTool("save_chart_edits", {
-            charts: [chartEntry],
+            charts: [{
+                    editId,
+                    name,
+                    description: description || "",
+                }],
         });
     }
     /**

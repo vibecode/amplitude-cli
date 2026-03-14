@@ -62,42 +62,55 @@ export function registerRetentionCommand(program: Command): void {
         const countGroup = opts.countGroup || "User";
         const interval = parseInt(opts.interval || "1", 10);
 
-        // Parse filters
-        const filters =
-          opts.filter && opts.filter.length > 0
-            ? opts.filter.map((f: string) => parseFilter(f))
-            : undefined;
+        const startEventDef: Record<string, unknown> = {
+          event_type: opts.startEvent,
+          filters: [] as unknown[],
+          group_by: [] as unknown[],
+        };
+        const retentionEventDef: Record<string, unknown> = {
+          event_type: opts.returnEvent,
+          filters: [] as unknown[],
+          group_by: [] as unknown[],
+        };
 
-        const segments: Record<string, unknown>[] = [
-          {
-            group_type: countGroup,
-            ...(filters && { filters }),
-          },
-        ];
+        // Parse filters — apply to startEvent
+        if (opts.filter && opts.filter.length > 0) {
+          startEventDef.filters = opts.filter.map((f: string) => parseFilter(f));
+        }
 
-        const definition: Record<string, unknown> = {
-          type: "retention",
-          returning_event: { event_type: opts.returnEvent },
-          new_user_event: { event_type: opts.startEvent },
-          retention_type: opts.method || "nday",
-          segments,
+        const params: Record<string, unknown> = {
+          startEvent: startEventDef,
+          retentionEvents: [retentionEventDef],
+          retentionMethod: opts.method || "nday",
+          countGroup,
           interval,
+          groupBy: opts.groupBy && opts.groupBy.length > 0
+            ? opts.groupBy.map((g: string) => parseGroupBy(g))
+            : [],
+          segments: [{ conditions: [] }],
         };
 
         // Brackets for bracket method
         if (opts.method === "bracket" && opts.brackets) {
-          definition.brackets = parseBrackets(opts.brackets);
-        }
-
-        // Group-by
-        if (opts.groupBy && opts.groupBy.length > 0) {
-          definition.group_by = opts.groupBy.map((g: string) => parseGroupBy(g));
+          params.retentionBrackets = parseBrackets(opts.brackets);
         }
 
         // Date range
-        const dateRange = buildDateRange(opts.range, opts.start, opts.end);
-        if (dateRange) {
-          definition.date_range = dateRange;
+        if (opts.range) {
+          params.range = opts.range;
+        } else if (opts.start && opts.end) {
+          params.range = "custom";
+          params.start = opts.start;
+          params.end = opts.end;
+        }
+
+        const definition: Record<string, unknown> = {
+          type: "retention",
+          params,
+        };
+
+        if (opts.name) {
+          definition.name = opts.name;
         }
 
         const mcp = new AmplitudeMcpClient();

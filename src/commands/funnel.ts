@@ -62,41 +62,48 @@ export function registerFunnelCommand(program: Command): void {
         const countGroup = opts.countGroup || "User";
 
         // Build events array for funnel
-        const events = steps.map((step: string) => ({ event_type: step }));
+        const events = steps.map((step: string) => ({
+          event_type: step,
+          filters: [] as unknown[],
+          group_by: [] as unknown[],
+        }));
 
-        // Parse filters
-        const filters =
-          opts.filter && opts.filter.length > 0
-            ? opts.filter.map((f: string) => parseFilter(f))
-            : undefined;
-
-        const segments: Record<string, unknown>[] = [
-          {
-            group_type: countGroup,
-            ...(filters && { filters }),
-          },
-        ];
+        // Parse filters — apply to first event and segments
+        if (opts.filter && opts.filter.length > 0) {
+          const filters = opts.filter.map((f: string) => parseFilter(f));
+          events[0].filters = filters;
+        }
 
         // Parse conversion window
         const conversionWindow = parseConversionWindow(opts.conversionWindow || "7d");
 
-        const definition: Record<string, unknown> = {
-          type: "funnels",
+        const params: Record<string, unknown> = {
           events,
-          segments,
-          funnel_order: opts.order || "this_order",
-          conversion_window: conversionWindow,
+          countGroup,
+          groupBy: opts.groupBy && opts.groupBy.length > 0
+            ? opts.groupBy.map((g: string) => parseGroupBy(g))
+            : [],
+          segments: [{ conditions: [] }],
+          order: opts.order || "this_order",
+          conversionWindow: conversionWindow,
         };
 
-        // Group-by
-        if (opts.groupBy && opts.groupBy.length > 0) {
-          definition.group_by = opts.groupBy.map((g: string) => parseGroupBy(g));
+        // Date range
+        if (opts.range) {
+          params.range = opts.range;
+        } else if (opts.start && opts.end) {
+          params.range = "custom";
+          params.start = opts.start;
+          params.end = opts.end;
         }
 
-        // Date range
-        const dateRange = buildDateRange(opts.range, opts.start, opts.end);
-        if (dateRange) {
-          definition.date_range = dateRange;
+        const definition: Record<string, unknown> = {
+          type: "funnels",
+          params,
+        };
+
+        if (opts.name) {
+          definition.name = opts.name;
         }
 
         const mcp = new AmplitudeMcpClient();

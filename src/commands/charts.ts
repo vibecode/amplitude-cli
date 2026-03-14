@@ -14,7 +14,13 @@ import {
   buildDateRange,
 } from "../utils/filters.js";
 
-/** Build a segment/event-segmentation definition from simple flags. */
+/**
+ * Build an eventsSegmentation definition from simple flags.
+ * The MCP query_dataset tool expects:
+ *   { definition: { app, type, name, params: { range, events, metric, interval, ... } }, projectId }
+ * The `app` field and `projectId` are set by queryDataset() in mcp-client.ts,
+ * so we just need to build { type, name?, params }.
+ */
 function buildChartDefinition(opts: {
   event: string;
   metric?: string;
@@ -25,47 +31,59 @@ function buildChartDefinition(opts: {
   filter?: string[];
   groupBy?: string[];
   countGroup?: string;
+  name?: string;
 }): Record<string, unknown> {
   const metric = opts.metric || "uniques";
   const interval = opts.interval !== undefined ? parseInt(opts.interval, 10) : 1;
   const countGroup = opts.countGroup || "User";
 
-  const events = [
-    {
-      event_type: opts.event,
-    },
-  ];
+  const eventDef: Record<string, unknown> = {
+    event_type: opts.event,
+    filters: [] as unknown[],
+    group_by: [] as unknown[],
+  };
 
-  const segments: Record<string, unknown>[] = [];
-
-  // Parse filters
+  // Parse per-event filters
   if (opts.filter && opts.filter.length > 0) {
-    const filters = opts.filter.map((f) => parseFilter(f));
-    segments.push({
-      filters,
-      group_type: countGroup,
-    });
-  } else {
-    segments.push({ group_type: countGroup });
+    eventDef.filters = opts.filter.map((f) => parseFilter(f));
+  }
+
+  // Parse per-event group-by
+  if (opts.groupBy && opts.groupBy.length > 0) {
+    eventDef.group_by = opts.groupBy.map((g) => parseGroupBy(g));
+  }
+
+  const params: Record<string, unknown> = {
+    events: [eventDef],
+    metric,
+    interval,
+    countGroup,
+    groupBy: opts.groupBy && opts.groupBy.length > 0
+      ? opts.groupBy.map((g) => parseGroupBy(g))
+      : [],
+    segments: [{ conditions: [] }],
+  };
+
+  // Date range — use range string or custom start/end
+  if (opts.range) {
+    params.range = opts.range;
+  } else if (opts.start && opts.end) {
+    params.range = "custom";
+    params.start = opts.start;
+    params.end = opts.end;
+  } else if (opts.start || opts.end) {
+    params.range = "custom";
+    if (opts.start) params.start = opts.start;
+    if (opts.end) params.end = opts.end;
   }
 
   const definition: Record<string, unknown> = {
-    type: "segmentation",
-    events,
-    segments,
-    metric,
-    interval,
+    type: "eventsSegmentation",
+    params,
   };
 
-  // Group-by
-  if (opts.groupBy && opts.groupBy.length > 0) {
-    definition.group_by = opts.groupBy.map((g) => parseGroupBy(g));
-  }
-
-  // Date range
-  const dateRange = buildDateRange(opts.range, opts.start, opts.end);
-  if (dateRange) {
-    definition.date_range = dateRange;
+  if (opts.name) {
+    definition.name = opts.name;
   }
 
   return definition;
@@ -173,6 +191,7 @@ export function registerChartCommands(program: Command): void {
             filter: opts.filter,
             groupBy: opts.groupBy,
             countGroup: opts.countGroup,
+            name: opts.name,
           });
         } else if (opts.definition) {
           definition = JSON.parse(opts.definition);
